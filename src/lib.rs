@@ -5,6 +5,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Error, ErrorKind, Read, Write};
+use std::path::Path;
 use std::string::ToString;
 use std::sync::Mutex;
 
@@ -16,19 +17,53 @@ lazy_static! {
     };
 }
 
-pub fn load_labels(file: &str) -> Result<(), Error> {
+// value list, automatically converted to hash40's ; read line-by-line
+pub fn load_labels<P: AsRef<Path>>(file: P) -> Result<(), Error> {
     match LABELS.lock() {
-        Ok(ref mut x) => {
+        Ok(ref mut map) => {
             for l in BufReader::new(File::open(file)?).lines() {
                 match l {
-                    Ok(l_) => {
-                        x.insert(to_hash40(&l_), l_);
+                    Ok(line) => {
+                        map.insert(to_hash40(&line), line);
                     }
                     Err(_) => continue,
                 }
             }
             Ok(())
         }
+        // TODO: returning a io:Error here is bad
+        Err(_) => Err(Error::new(
+            ErrorKind::Other,
+            "Failed to access global: LABELS",
+        )),
+    }
+}
+
+// comma-separated hash40/value list ; read line-by-line
+pub fn load_custom_labels<P: AsRef<Path>>(file: P) -> Result<(), Error> {
+    match LABELS.lock() {
+        Ok(ref mut map) => {
+            for l in BufReader::new(File::open(file)?).lines() {
+                match l {
+                    Ok(line) => {
+                        let split: Vec<&str> = line.split(',').collect();
+                        let hash = match split[0].starts_with("0x") {
+                            true => {
+                                match Hash40::from_hex_str(split[0]) {
+                                    Ok(h) => h,
+                                    Err(_) => continue,
+                                }
+                            }
+                            false => continue,
+                        };
+                        map.insert(hash, String::from(split[1]));
+                    }
+                    Err(_) => continue,
+                }
+            }
+            Ok(())
+        }
+        // TODO: returning a io:Error here is bad
         Err(_) => Err(Error::new(
             ErrorKind::Other,
             "Failed to access global: LABELS",
@@ -59,28 +94,9 @@ impl Hash40 {
             Err(_) => self.to_string(),
         }
     }
-}
 
-// extension of io::Read capabilities to get Hash40 from stream
-pub trait ReadHash40: ReadBytesExt {
-    fn read_hash40<T: ByteOrder>(&mut self) -> Result<Hash40, Error>;
-}
-impl<R: Read> ReadHash40 for R {
-    fn read_hash40<T: ByteOrder>(&mut self) -> Result<Hash40, Error> {
-        match self.read_u64::<T>() {
-            Ok(x) => Ok(Hash40(x)),
-            Err(y) => Err(y),
-        }
-    }
-}
-
-// extension of io::Write capabilities to get write Hash40 to stream
-pub trait WriteHash40: WriteBytesExt {
-    fn write_hash40<T: ByteOrder>(&mut self, hash: &Hash40) -> Result<(), Error>;
-}
-impl<W: Write> WriteHash40 for W {
-    fn write_hash40<T: ByteOrder>(&mut self, hash: &Hash40) -> Result<(), Error> {
-        self.write_u64::<T>(hash.0)
+    pub fn from_hex_str(value: &str) -> Result<Self, std::num::ParseIntError> {
+        Ok(Hash40(u64::from_str_radix(&value[2..], 16)?))
     }
 }
 
@@ -88,6 +104,47 @@ impl<W: Write> WriteHash40 for W {
 impl ToString for Hash40 {
     fn to_string(&self) -> String {
         format!("0x{:010x}", self.0)
+    }
+}
+
+// extension of io::Read capabilities to get Hash40 from stream
+pub trait ReadHash40: ReadBytesExt {
+    fn read_hash40<T: ByteOrder>(&mut self) -> Result<Hash40, Error>;
+
+    fn read_hash40_with_meta<T: ByteOrder>(&mut self) -> Result<(Hash40, u32), Error>;
+}
+impl<R: Read> ReadHash40 for R {
+    fn read_hash40<T: ByteOrder>(&mut self) -> Result<Hash40, Error> {
+        Ok(Hash40(self.read_u64::<T>()? & 0xffffffffff))
+    }
+
+    fn read_hash40_with_meta<T: ByteOrder>(&mut self) -> Result<(Hash40, u32), Error> {
+        let long = self.read_u64::<T>()?;
+        Ok((Hash40(long & 0xffffffffff), (long >> 40) as u32))
+    }
+}
+
+// extension of io::Write capabilities to write Hash40 to stream
+pub trait WriteHash40: WriteBytesExt {
+    fn write_hash40<T: ByteOrder>(&mut self, hash: &Hash40) -> Result<(), Error>;
+
+    fn write_hash40_with_meta<T: ByteOrder>(
+        &mut self,
+        hash: &Hash40,
+        meta: u32,
+    ) -> Result<(), Error>;
+}
+impl<W: Write> WriteHash40 for W {
+    fn write_hash40<T: ByteOrder>(&mut self, hash: &Hash40) -> Result<(), Error> {
+        self.write_u64::<T>(hash.0)
+    }
+
+    fn write_hash40_with_meta<T: ByteOrder>(
+        &mut self,
+        hash: &Hash40,
+        meta: u32,
+    ) -> Result<(), Error> {
+        self.write_u64::<T>(hash.0 | (meta as u64) << 40)
     }
 }
 
@@ -107,10 +164,7 @@ impl<'de> de::Visitor<'de> for Hash40Visitor {
 
     fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
         if value.starts_with("0x") {
-            match u64::from_str_radix(&value[2..], 16) {
-                Ok(x) => Ok(Hash40(x)),
-                Err(y) => Err(E::custom(y)),
-            }
+            Hash40::from_hex_str(value).map_err(|e| { E::custom(e) })
         } else {
             Ok(to_hash40(value))
         }

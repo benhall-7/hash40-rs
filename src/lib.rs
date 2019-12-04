@@ -9,6 +9,15 @@ use std::path::Path;
 use std::string::ToString;
 use std::sync::Mutex;
 
+pub use compile_time_crc32;
+
+#[macro_export]
+macro_rules! hash40 {
+    ($lit:literal) => {
+        Hash40(($crate::compile_time_crc32::crc32!($lit) as u64) | ($lit.len() as u64) << 32)
+    };
+}
+
 lazy_static! {
     static ref LABELS: Mutex<HashMap<Hash40, String>> = {
         let l = HashMap::new();
@@ -47,14 +56,16 @@ pub fn load_custom_labels<P: AsRef<Path>>(file: P) -> Result<(), Error> {
                 match l {
                     Ok(line) => {
                         let split: Vec<&str> = line.split(',').collect();
-                        let hash = match split[0].starts_with("0x") {
-                            true => {
-                                match Hash40::from_hex_str(split[0]) {
-                                    Ok(h) => h,
-                                    Err(_) => continue,
-                                }
+                        if split.len() < 2 {
+                            continue;
+                        }
+                        let hash = if split[0].starts_with("0x") {
+                            match Hash40::from_hex_str(split[0]) {
+                                Ok(h) => h,
+                                Err(_) => continue,
                             }
-                            false => continue,
+                        } else {
+                            continue;
                         };
                         map.insert(hash, String::from(split[1]));
                     }
@@ -76,18 +87,18 @@ pub struct Hash40(pub u64);
 
 impl Hash40 {
     #[inline]
-    pub fn crc(&self) -> u32 {
+    pub fn crc(self) -> u32 {
         self.0 as u32
     }
 
     #[inline]
-    pub fn len(&self) -> u8 {
+    pub fn strlen(self) -> u8 {
         (self.0 >> 32) as u8
     }
 
-    pub fn to_label(&self) -> String {
+    pub fn to_label(self) -> String {
         match LABELS.lock() {
-            Ok(x) => match x.get(self) {
+            Ok(x) => match x.get(&self) {
                 Some(l) => String::from(l),
                 None => self.to_string(),
             },
@@ -115,33 +126,33 @@ pub trait ReadHash40: ReadBytesExt {
 }
 impl<R: Read> ReadHash40 for R {
     fn read_hash40<T: ByteOrder>(&mut self) -> Result<Hash40, Error> {
-        Ok(Hash40(self.read_u64::<T>()? & 0xffffffffff))
+        Ok(Hash40(self.read_u64::<T>()? & 0xff_ffff_ffff))
     }
 
     fn read_hash40_with_meta<T: ByteOrder>(&mut self) -> Result<(Hash40, u32), Error> {
         let long = self.read_u64::<T>()?;
-        Ok((Hash40(long & 0xffffffffff), (long >> 40) as u32))
+        Ok((Hash40(long & 0xff_ffff_ffff), (long >> 40) as u32))
     }
 }
 
 // extension of io::Write capabilities to write Hash40 to stream
 pub trait WriteHash40: WriteBytesExt {
-    fn write_hash40<T: ByteOrder>(&mut self, hash: &Hash40) -> Result<(), Error>;
+    fn write_hash40<T: ByteOrder>(&mut self, hash: Hash40) -> Result<(), Error>;
 
     fn write_hash40_with_meta<T: ByteOrder>(
         &mut self,
-        hash: &Hash40,
+        hash: Hash40,
         meta: u32,
     ) -> Result<(), Error>;
 }
 impl<W: Write> WriteHash40 for W {
-    fn write_hash40<T: ByteOrder>(&mut self, hash: &Hash40) -> Result<(), Error> {
+    fn write_hash40<T: ByteOrder>(&mut self, hash: Hash40) -> Result<(), Error> {
         self.write_u64::<T>(hash.0)
     }
 
     fn write_hash40_with_meta<T: ByteOrder>(
         &mut self,
-        hash: &Hash40,
+        hash: Hash40,
         meta: u32,
     ) -> Result<(), Error> {
         self.write_u64::<T>(hash.0 | (meta as u64) << 40)
@@ -189,7 +200,7 @@ pub fn to_hash40(word: &str) -> Hash40 {
 }
 
 fn crc32_with_len(word: &str) -> u64 {
-    let mut hash: u32 = 0xffffffff;
+    let mut hash = !0u32;
     let mut len: u8 = 0;
     for b in word.bytes() {
         let shift = hash >> 8;

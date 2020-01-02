@@ -9,6 +9,7 @@ edition = "2018"
 
 [dependencies]
 byteorder = "^1.3.2"
+compile-time-crc32 = "0.1.2"
+crc = "^1.8"
 lazy_static = "^1.4.0"
 serde = "^1.0.98"
-compile-time-crc32 = "0.1.2"

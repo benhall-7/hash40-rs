@@ -1,3 +1,4 @@
+use bimap::BiHashMap;
 use byteorder::{ByteOrder, ReadBytesExt, WriteBytesExt};
 use crc::crc32::checksum_ieee;
 use lazy_static::lazy_static;
@@ -5,85 +6,57 @@ use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufRead, BufReader, Error, ErrorKind, Read, Write};
-use std::path::Path;
+// use std::error::Error;
+// use std::fs::File;
+use std::io;
+use std::io::{/*BufRead, BufReader, ErrorKind,*/ Read, Write};
+// use std::path::Path;
 use std::string::ToString;
 use std::sync::Mutex;
 
 pub use compile_time_crc32;
 
+mod private;
+
 #[macro_export]
 macro_rules! hash40 {
     ($lit:literal) => {
-        $crate::Hash40(($crate::compile_time_crc32::crc32!($lit) as u64) | ($lit.len() as u64) << 32)
+        $crate::Hash40(
+            ($crate::compile_time_crc32::crc32!($lit) as u64) | ($lit.len() as u64) << 32,
+        )
     };
+}
+
+#[derive(Debug)]
+pub enum LabelMap {
+    Unset,
+    Pure(HashMap<Hash40, String>),
+    Custom(BiHashMap<Hash40, String>),
 }
 
 lazy_static! {
-    static ref LABELS: Mutex<HashMap<Hash40, String>> = {
-        let l = HashMap::new();
-        //TODO: populate the dictionary at compile time with all documented labels
-        Mutex::new(l)
-    };
+    static ref LABELS: Mutex<LabelMap> = { Mutex::new(LabelMap::Unset) };
 }
 
-// value list, automatically converted to hash40's ; read line-by-line
-pub fn load_labels<P: AsRef<Path>>(file: P) -> Result<(), Error> {
-    match LABELS.lock() {
-        Ok(ref mut map) => {
-            for l in BufReader::new(File::open(file)?).lines() {
-                match l {
-                    Ok(line) => {
-                        map.insert(to_hash40(&line), line);
-                    }
-                    Err(_) => continue,
-                }
-            }
-            Ok(())
-        }
-        // TODO: returning a io:Error here is bad
-        Err(_) => Err(Error::new(
-            ErrorKind::Other,
-            "Failed to access global: LABELS",
-        )),
+pub fn set_labels<I: IntoIterator<Item = String>>(labels: I) {
+    let mut map = LABELS.lock().unwrap();
+    let mut hashmap = HashMap::<Hash40, String>::new();
+
+    for l in labels {
+        hashmap.insert(to_hash40(&l), l);
     }
+    *map = LabelMap::Pure(hashmap);
 }
 
 // comma-separated hash40/value list ; read line-by-line
-pub fn load_custom_labels<P: AsRef<Path>>(file: P) -> Result<(), Error> {
-    match LABELS.lock() {
-        Ok(ref mut map) => {
-            for l in BufReader::new(File::open(file)?).lines() {
-                match l {
-                    Ok(line) => {
-                        let split: Vec<&str> = line.split(',').collect();
-                        if split.len() < 2 {
-                            continue;
-                        }
-                        let hash = if split[0].starts_with("0x") {
-                            match Hash40::from_hex_str(split[0]) {
-                                Ok(h) => h,
-                                Err(_) => {
-                                    continue;
-                                }
-                            }
-                        } else {
-                            continue;
-                        };
-                        map.insert(hash, String::from(split[1]));
-                    }
-                    Err(_) => continue,
-                }
-            }
-            Ok(())
-        }
-        // TODO: returning a io:Error here is bad
-        Err(_) => Err(Error::new(
-            ErrorKind::Other,
-            "Failed to access global: LABELS",
-        )),
+pub fn set_custom_labels<I: Iterator<Item = (Hash40, String)>>(labels: I) {
+    let mut map = LABELS.lock().unwrap();
+    let mut bimap = BiHashMap::<Hash40, String>::new();
+
+    for (hash, label) in labels {
+        bimap.insert(hash, label);
     }
+    *map = LabelMap::Custom(bimap);
 }
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -102,9 +75,22 @@ impl Hash40 {
 
     pub fn to_label(self) -> String {
         match LABELS.lock() {
-            Ok(x) => match x.get(&self) {
-                Some(l) => String::from(l),
-                None => self.to_string(),
+            Ok(label_map) => match &*label_map {
+                LabelMap::Pure(map) => {
+                    if let Some(label) = map.get(&self) {
+                        String::from(label)
+                    } else {
+                        self.to_string()
+                    }
+                }
+                LabelMap::Custom(bimap) => {
+                    if let Some(label) = bimap.get_by_left(&self) {
+                        String::from(label)
+                    } else {
+                        self.to_string()
+                    }
+                }
+                LabelMap::Unset => self.to_string(),
             },
             Err(_) => self.to_string(),
         }
@@ -124,16 +110,16 @@ impl ToString for Hash40 {
 
 // extension of io::Read capabilities to get Hash40 from stream
 pub trait ReadHash40: ReadBytesExt {
-    fn read_hash40<T: ByteOrder>(&mut self) -> Result<Hash40, Error>;
+    fn read_hash40<T: ByteOrder>(&mut self) -> Result<Hash40, io::Error>;
 
-    fn read_hash40_with_meta<T: ByteOrder>(&mut self) -> Result<(Hash40, u32), Error>;
+    fn read_hash40_with_meta<T: ByteOrder>(&mut self) -> Result<(Hash40, u32), io::Error>;
 }
 impl<R: Read> ReadHash40 for R {
-    fn read_hash40<T: ByteOrder>(&mut self) -> Result<Hash40, Error> {
+    fn read_hash40<T: ByteOrder>(&mut self) -> Result<Hash40, io::Error> {
         Ok(Hash40(self.read_u64::<T>()? & 0xff_ffff_ffff))
     }
 
-    fn read_hash40_with_meta<T: ByteOrder>(&mut self) -> Result<(Hash40, u32), Error> {
+    fn read_hash40_with_meta<T: ByteOrder>(&mut self) -> Result<(Hash40, u32), io::Error> {
         let long = self.read_u64::<T>()?;
         Ok((Hash40(long & 0xff_ffff_ffff), (long >> 40) as u32))
     }
@@ -141,16 +127,16 @@ impl<R: Read> ReadHash40 for R {
 
 // extension of io::Write capabilities to write Hash40 to stream
 pub trait WriteHash40: WriteBytesExt {
-    fn write_hash40<T: ByteOrder>(&mut self, hash: Hash40) -> Result<(), Error>;
+    fn write_hash40<T: ByteOrder>(&mut self, hash: Hash40) -> Result<(), io::Error>;
 
     fn write_hash40_with_meta<T: ByteOrder>(
         &mut self,
         hash: Hash40,
         meta: u32,
-    ) -> Result<(), Error>;
+    ) -> Result<(), io::Error>;
 }
 impl<W: Write> WriteHash40 for W {
-    fn write_hash40<T: ByteOrder>(&mut self, hash: Hash40) -> Result<(), Error> {
+    fn write_hash40<T: ByteOrder>(&mut self, hash: Hash40) -> Result<(), io::Error> {
         self.write_u64::<T>(hash.0)
     }
 
@@ -158,7 +144,7 @@ impl<W: Write> WriteHash40 for W {
         &mut self,
         hash: Hash40,
         meta: u32,
-    ) -> Result<(), Error> {
+    ) -> Result<(), io::Error> {
         self.write_u64::<T>(hash.0 | (meta as u64) << 40)
     }
 }
@@ -179,7 +165,7 @@ impl<'de> de::Visitor<'de> for Hash40Visitor {
 
     fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
         if value.starts_with("0x") {
-            Hash40::from_hex_str(value).map_err(|e| { E::custom(e) })
+            Hash40::from_hex_str(value).map_err(E::custom)
         } else {
             Ok(to_hash40(value))
         }

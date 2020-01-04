@@ -6,11 +6,11 @@ use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use std::collections::HashMap;
-// use std::error::Error;
-// use std::fs::File;
+use std::fs::File;
 use std::io;
-use std::io::{/*BufRead, BufReader, ErrorKind,*/ Read, Write};
-// use std::path::Path;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::num::ParseIntError;
+use std::path::Path;
 use std::string::ToString;
 use std::sync::Mutex;
 
@@ -48,7 +48,6 @@ pub fn set_labels<I: IntoIterator<Item = String>>(labels: I) {
     *map = LabelMap::Pure(hashmap);
 }
 
-// comma-separated hash40/value list ; read line-by-line
 pub fn set_custom_labels<I: Iterator<Item = (Hash40, String)>>(labels: I) {
     let mut map = LABELS.lock().unwrap();
     let mut bimap = BiHashMap::<Hash40, String>::new();
@@ -57,6 +56,36 @@ pub fn set_custom_labels<I: Iterator<Item = (Hash40, String)>>(labels: I) {
         bimap.insert(hash, label);
     }
     *map = LabelMap::Custom(bimap);
+}
+
+pub fn read_labels<P: AsRef<Path>>(path: P) -> Result<Vec<String>, io::Error> {
+    let reader = BufReader::new(File::open(path)?);
+    reader.lines().collect::<Result<Vec<_>, _>>()
+}
+
+pub fn read_custom_labels<P: AsRef<Path>>(path: P) -> Result<Vec<(Hash40, String)>, io::Error> {
+    let reader = BufReader::new(File::open(path)?);
+    reader
+        .lines()
+        .filter_map(|line_result| match line_result {
+            Ok(line) => {
+                let mut split = line.split(',');
+                let hash_opt = split.next();
+                let label_opt = split.next();
+
+                if let Some(hash_str) = hash_opt {
+                    if let Some(label) = label_opt {
+                        if let Ok(hash) = Hash40::from_hex_str(hash_str) {
+                            return Some(Ok((hash, String::from(label))));
+                        }
+                    }
+                }
+
+                None
+            }
+            Err(e) => Some(Err(e)),
+        })
+        .collect::<Result<Vec<_>, _>>()
 }
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
@@ -96,8 +125,14 @@ impl Hash40 {
         }
     }
 
-    pub fn from_hex_str(value: &str) -> Result<Self, std::num::ParseIntError> {
-        Ok(Hash40(u64::from_str_radix(&value[2..], 16)?))
+    // TODO: if the string isn't formatted with "0x"
+    // return a real error instead of Err(None)
+    pub fn from_hex_str(value: &str) -> Result<Self, Option<ParseIntError>> {
+        if &value[0..2] == "0x" {
+            Ok(Hash40(u64::from_str_radix(&value[2..], 16)?))
+        } else {
+            Err(None)
+        }
     }
 }
 
@@ -165,7 +200,9 @@ impl<'de> de::Visitor<'de> for Hash40Visitor {
 
     fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
         if value.starts_with("0x") {
-            Hash40::from_hex_str(value).map_err(E::custom)
+            // from_hex_str only returns None if it doesn't start with 0x
+            // we can safely unwrap here
+            Hash40::from_hex_str(value).map_err(|e| E::custom(e.unwrap()))
         } else {
             Ok(to_hash40(value))
         }

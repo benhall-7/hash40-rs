@@ -9,10 +9,10 @@ use std::path::Path;
 
 pub use compile_time_crc32;
 
-mod private;
 mod r#impl;
+mod private;
 
-use private::{LABELS, LabelMap, crc32_with_len};
+use private::{crc32_with_len, LabelMap, LABELS};
 
 #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Hash40(pub u64);
@@ -101,5 +101,3 @@ struct Hash40Visitor;
 pub fn to_hash40(word: &str) -> Hash40 {
     Hash40(crc32_with_len(word))
 }
-
-

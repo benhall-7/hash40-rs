@@ -1,10 +1,11 @@
-use crate::{Hash40, Hash40Visitor, ReadHash40, WriteHash40, to_hash40};
-use crate::private::{LABELS, LabelMap};
+use crate::private::{LabelMap, LABELS};
+use crate::{to_hash40, Hash40, Hash40Visitor, ReadHash40, WriteHash40};
 use byteorder::{ByteOrder, ReadBytesExt, WriteBytesExt};
-use serde::{de, Serialize, Serializer, Deserialize, Deserializer};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
-use std::num::ParseIntError;
+use std::fmt::{Display, Error as fmtError, Formatter};
 use std::io::{Error, Read, Write};
+use std::num::ParseIntError;
 
 impl Hash40 {
     #[inline]
@@ -15,29 +16,6 @@ impl Hash40 {
     #[inline]
     pub fn strlen(self) -> u8 {
         (self.0 >> 32) as u8
-    }
-
-    pub fn to_label(self) -> String {
-        match LABELS.lock() {
-            Ok(label_map) => match &*label_map {
-                LabelMap::Pure(map) => {
-                    if let Some(label) = map.get(&self) {
-                        String::from(label)
-                    } else {
-                        self.to_string()
-                    }
-                }
-                LabelMap::Custom(bimap) => {
-                    if let Some(label) = bimap.get_by_left(&self) {
-                        String::from(label)
-                    } else {
-                        self.to_string()
-                    }
-                }
-                LabelMap::Unset => self.to_string(),
-            },
-            Err(_) => self.to_string(),
-        }
     }
 
     // TODO: if the string isn't formatted with "0x"
@@ -52,9 +30,28 @@ impl Hash40 {
 }
 
 // Hash40 -> string
-impl ToString for Hash40 {
-    fn to_string(&self) -> String {
-        format!("0x{:010x}", self.0)
+impl Display for Hash40 {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), fmtError> {
+        match LABELS.lock() {
+            Ok(label_map) => match &*label_map {
+                LabelMap::Pure(map) => {
+                    if let Some(label) = map.get(&self) {
+                        write!(f, "{}", label)
+                    } else {
+                        write!(f, "0x{:010x}", self.0)
+                    }
+                }
+                LabelMap::Custom(bimap) => {
+                    if let Some(label) = bimap.get_by_left(&self) {
+                        write!(f, "{}", label)
+                    } else {
+                        write!(f, "0x{:010x}", self.0)
+                    }
+                }
+                LabelMap::Unset => write!(f, "0x{:010x}", self.0),
+            },
+            Err(_) => write!(f, "0x{:010x}", self.0),
+        }
     }
 }
 
@@ -108,7 +105,7 @@ impl<'de> de::Visitor<'de> for Hash40Visitor {
 
 impl Serialize for Hash40 {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.to_label())
+        serializer.serialize_str(format!("{}", &self).as_ref())
     }
 }
 

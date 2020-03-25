@@ -3,7 +3,7 @@ name = "hash40"
 description = "Library for working with Hash40 types in Smash Ultimate"
 repository = "https://github.com/BenHall-7/hash40-rs"
 license = "MIT"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["BenHall-7 <benjaminjahall@gmail.com>"]
 edition = "2018"
 

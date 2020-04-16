@@ -6,6 +6,7 @@ use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt::{Display, Error as fmtError, Formatter};
 use std::io::{Error, Read, Write};
 use std::num::ParseIntError;
+use std::str::FromStr;
 
 impl Hash40 {
     #[inline]
@@ -25,6 +26,20 @@ impl Hash40 {
             Ok(Hash40(u64::from_str_radix(&value[2..], 16)?))
         } else {
             Err(None)
+        }
+    }
+}
+
+impl FromStr for Hash40 {
+    type Err = ParseIntError;
+
+    fn from_str(f: &str) -> Result<Self, ParseIntError> {
+        if f.starts_with("0x") {
+            // from_hex_str only returns None if it doesn't start with 0x
+            // we can safely unwrap here
+            Self::from_hex_str(f).map_err(|e| e.unwrap())
+        } else {
+            Ok(to_hash40(f))
         }
     }
 }
@@ -88,18 +103,12 @@ impl<'de> de::Visitor<'de> for Hash40Visitor {
         formatter: &mut std::fmt::Formatter,
     ) -> std::result::Result<(), std::fmt::Error> {
         formatter.write_str(
-            "A hex-formatted integer hash value, or a string standing for its reversed form",
+            "A hex-formatted integer hash value, or a string representing for its reversed form",
         )
     }
 
     fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
-        if value.starts_with("0x") {
-            // from_hex_str only returns None if it doesn't start with 0x
-            // we can safely unwrap here
-            Hash40::from_hex_str(value).map_err(|e| E::custom(e.unwrap()))
-        } else {
-            Ok(to_hash40(value))
-        }
+        Hash40::from_str(value).map_err(E::custom)
     }
 }
 

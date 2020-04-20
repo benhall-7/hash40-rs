@@ -14,7 +14,7 @@ mod private;
 
 use private::{crc32_with_len, LabelMap, LABELS};
 
-#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Default, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Hash40(pub u64);
 
 #[macro_export]

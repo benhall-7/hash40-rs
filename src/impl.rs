@@ -1,6 +1,7 @@
 use crate::private::{LabelMap, LABELS};
 use crate::{to_hash40, Hash40, Hash40Visitor, ReadHash40, WriteHash40};
 use byteorder::{ByteOrder, ReadBytesExt, WriteBytesExt};
+use diff::Diff;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use std::fmt::{Display, Error as fmtError, Formatter};
@@ -121,5 +122,27 @@ impl Serialize for Hash40 {
 impl<'de> Deserialize<'de> for Hash40 {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         deserializer.deserialize_str(Hash40Visitor)
+    }
+}
+
+impl Diff for Hash40 {
+    type Repr = Option<Hash40>;
+
+    fn diff(&self, other: &Self) -> Self::Repr {
+        if self == other {
+            None
+        } else {
+            Some(*other)
+        }
+    }
+
+    fn apply(&mut self, diff: &Self::Repr) {
+        if let Some(other) = diff {
+            *self = *other;
+        }
+    }
+
+    fn identity() -> Self {
+        Default::default()
     }
 }

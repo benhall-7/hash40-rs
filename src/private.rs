@@ -14,7 +14,7 @@ pub enum LabelMap {
 }
 
 lazy_static! {
-    pub static ref LABELS: Mutex<LabelMap> = { Mutex::new(LabelMap::Unset) };
+    pub static ref LABELS: Mutex<LabelMap> = Mutex::new(LabelMap::Unset);
 }
 
 pub fn crc32_with_len(word: &str) -> u64 {

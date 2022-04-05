@@ -1,37 +1,32 @@
 use bimap::BiHashMap;
 use byteorder::{ByteOrder, ReadBytesExt, WriteBytesExt};
+use lazy_static::lazy_static;
 
 use std::collections::HashMap;
 use std::fs::File;
 use std::io;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
-
-pub use compile_time_crc32;
+use std::sync::Mutex;
 
 mod r#impl;
-mod private;
+pub mod label_map;
 
-use private::{crc32_with_len, LabelMap, LABELS};
+use label_map::LabelMap;
+
+lazy_static! {
+    pub(crate) static ref LABELS: Mutex<LabelMap> = Mutex::new(LabelMap::Unset);
+}
 
 #[derive(Debug, Default, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Hash40(pub u64);
-
-#[macro_export]
-macro_rules! hash40 {
-    ($lit:literal) => {
-        $crate::Hash40(
-            ($crate::compile_time_crc32::crc32!($lit) as u64) | ($lit.len() as u64) << 32,
-        )
-    };
-}
+pub struct Hash40(u64);
 
 pub fn set_labels<I: IntoIterator<Item = String>>(labels: I) {
     let mut map = LABELS.lock().unwrap();
     let mut hashmap = HashMap::<Hash40, String>::new();
 
     for l in labels {
-        hashmap.insert(to_hash40(&l), l);
+        hashmap.insert(Hash40::new(&l), l);
     }
     *map = LabelMap::Pure(hashmap);
 }
@@ -96,8 +91,3 @@ pub trait WriteHash40: WriteBytesExt {
 
 /// Used to implement serde's Deserialize trait
 struct Hash40Visitor;
-
-/// exposed function to compute a hash
-pub fn to_hash40(word: &str) -> Hash40 {
-    Hash40(crc32_with_len(word))
-}

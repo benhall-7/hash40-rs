@@ -1,22 +1,30 @@
-use crate::private::{LabelMap, LABELS};
-use crate::{to_hash40, Hash40, Hash40Visitor, ReadHash40, WriteHash40};
+use crate::label_map::LabelMap;
+use crate::{Hash40, Hash40Visitor, ReadHash40, WriteHash40, LABELS};
 use byteorder::{ByteOrder, ReadBytesExt, WriteBytesExt};
+use crc::{Crc, CRC_32_CKSUM};
 use diff::Diff;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use std::fmt::{Display, Error as fmtError, Formatter};
 use std::io::{Error, Read, Write};
 use std::num::ParseIntError;
+use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
 
+/// The central type of the crate, representing a string hashed using the hash40 algorithm
+/// Hash40 is a combination of a crc32 checksum and string length appended to the top bits
 impl Hash40 {
-    #[inline]
-    pub fn crc(self) -> u32 {
+    pub const fn new(string: &str) -> Self {
+        let length_byte = (string.len() as u8 as u64) << 32;
+        let crc = Crc::<u32>::new(&CRC_32_CKSUM).checksum(string.as_bytes()) as u64;
+        Hash40(crc | length_byte)
+    }
+
+    pub const fn crc(self) -> u32 {
         self.0 as u32
     }
 
-    #[inline]
-    pub fn strlen(self) -> u8 {
+    pub const fn strlen(self) -> u8 {
         (self.0 >> 32) as u8
     }
 
@@ -40,7 +48,7 @@ impl FromStr for Hash40 {
             // we can safely unwrap here
             Self::from_hex_str(f).map_err(|e| e.unwrap())
         } else {
-            Ok(to_hash40(f))
+            Ok(Hash40::new(f))
         }
     }
 }
@@ -68,6 +76,20 @@ impl Display for Hash40 {
             },
             Err(_) => write!(f, "0x{:010x}", self.0),
         }
+    }
+}
+
+impl Deref for Hash40 {
+    type Target = u64;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for Hash40 {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 

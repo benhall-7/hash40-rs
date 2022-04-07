@@ -52,6 +52,8 @@ impl Hash40 {
         }
     }
 
+    /// Searches for the label associated with the hash value. If no label is found, returns
+    /// the hexadecimal value, formatted as `0x0123456789`
     pub fn to_label(&self) -> String {
         let lock = LABELS.lock();
         let labels = match lock {

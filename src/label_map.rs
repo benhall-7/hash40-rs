@@ -74,7 +74,7 @@ impl LabelMap {
         }
     }
 
-    pub fn hash_of(&self, label: &String) -> Option<Hash40> {
+    pub fn hash_of(&self, label: &str) -> Option<Hash40> {
         match self {
             LabelMap::Unset | LabelMap::Pure(..) => Some(hash40(label)),
             LabelMap::Custom(labels) => labels.get_by_right(label).copied(),

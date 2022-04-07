@@ -10,7 +10,7 @@ use std::io::{Error, Read, Write};
 use std::num::ParseIntError;
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
-use std::sync::{Mutex, Arc};
+use std::sync::{Arc, Mutex};
 
 impl Hash40 {
     /// Computes a Hash40 from a string. This method does not respect the static label map,
@@ -33,7 +33,7 @@ impl Hash40 {
     /// Computes a Hash40 from a string. This method checks if the string is a hexadecimal
     /// value first. If not, it either searches for a reverse label from the static map or
     /// computes a new hash, depending on the form of the static label map.
-    pub fn from_label(label: &String) -> Result<Self, FromLabelError> {
+    pub fn from_label(label: &str) -> Result<Self, FromLabelError> {
         match Self::from_hex_str(label) {
             Ok(hash) => Ok(hash),
             Err(err) => match err {
@@ -45,7 +45,7 @@ impl Hash40 {
                     };
                     labels
                         .hash_of(label)
-                        .ok_or_else(|| FromLabelError::LabelNotFound(label.clone()))
+                        .ok_or_else(|| FromLabelError::LabelNotFound(String::from(label)))
                 }
                 ParseHashError::ParseError(err) => Err(err.into()),
             },
@@ -58,7 +58,9 @@ impl Hash40 {
             Ok(labels) => labels,
             Err(err) => err.into_inner(),
         };
-        labels.label_of(*self).unwrap_or_else(|| format!("0x{:010x}", self.0))
+        labels
+            .label_of(*self)
+            .unwrap_or_else(|| format!("0x{:010x}", self.0))
     }
 
     /// Returns the CRC32 part of the hash

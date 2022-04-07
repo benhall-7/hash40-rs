@@ -11,7 +11,7 @@ use label_map::LabelMap;
 
 lazy_static! {
     /// The static map used for converting Hash40's between hash and string form.
-    /// 
+    ///
     /// Parent libraries should re-export this so that binaries can share a single
     /// label map between all instances of this crate
     pub static ref LABELS: Arc<Mutex<LabelMap>> = Arc::new(Mutex::new(LabelMap::Unset));

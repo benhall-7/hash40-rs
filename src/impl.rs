@@ -10,72 +10,85 @@ use std::io::{Error, Read, Write};
 use std::num::ParseIntError;
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
+use std::sync::{Mutex, Arc};
 
-/// The central type of the crate, representing a string hashed using the hash40 algorithm
-/// Hash40 is a combination of a crc32 checksum and string length appended to the top bits
 impl Hash40 {
+    /// Computes a Hash40 from a string. This method does not respect the static label map,
+    /// nor does it check to see if the provided string is in hexadecimal format already.
     pub const fn new(string: &str) -> Self {
         let length_byte = (string.len() as u8 as u64) << 32;
         let crc = Crc::<u32>::new(&CRC_32_CKSUM).checksum(string.as_bytes()) as u64;
         Hash40(crc | length_byte)
     }
 
+    /// Converts a hexadecimal string representation of a hash to a Hash40
+    pub fn from_hex_str(value: &str) -> Result<Self, ParseHashError> {
+        if let Some(stripped) = value.strip_prefix("0x") {
+            Ok(Hash40(u64::from_str_radix(stripped, 16)?))
+        } else {
+            Err(ParseHashError::MissingPrefix)
+        }
+    }
+
+    /// Computes a Hash40 from a string. This method checks if the string is a hexadecimal
+    /// value first. If not, it either searches for a reverse label from the static map or
+    /// computes a new hash, depending on the form of the static label map.
+    pub fn from_label(label: &String) -> Result<Self, FromLabelError> {
+        match Self::from_hex_str(label) {
+            Ok(hash) => Ok(hash),
+            Err(err) => match err {
+                ParseHashError::MissingPrefix => {
+                    let lock = LABELS.lock();
+                    let labels = match lock {
+                        Ok(labels) => labels,
+                        Err(err) => err.into_inner(),
+                    };
+                    labels
+                        .hash_of(label)
+                        .ok_or_else(|| FromLabelError::LabelNotFound(label.clone()))
+                }
+                ParseHashError::ParseError(err) => Err(err.into()),
+            },
+        }
+    }
+
+    pub fn to_label(&self) -> String {
+        let lock = LABELS.lock();
+        let labels = match lock {
+            Ok(labels) => labels,
+            Err(err) => err.into_inner(),
+        };
+        labels.label_of(*self).unwrap_or_else(|| format!("0x{:010x}", self.0))
+    }
+
+    /// Returns the CRC32 part of the hash
     pub const fn crc(self) -> u32 {
         self.0 as u32
     }
 
-    pub const fn strlen(self) -> u8 {
+    /// Returns the string length part of the hash
+    pub const fn str_len(self) -> u8 {
         (self.0 >> 32) as u8
     }
 
-    // TODO: if the string isn't formatted with "0x"
-    // return a real error instead of Err(None)
-    pub fn from_hex_str(value: &str) -> Result<Self, Option<ParseIntError>> {
-        if &value[0..2] == "0x" {
-            Ok(Hash40(u64::from_str_radix(&value[2..], 16)?))
-        } else {
-            Err(None)
-        }
+    /// A convenience method provided to access the static label map
+    pub fn label_map() -> Arc<Mutex<LabelMap>> {
+        LABELS.clone()
     }
 }
 
 impl FromStr for Hash40 {
-    type Err = ParseIntError;
+    type Err = FromLabelError;
 
-    fn from_str(f: &str) -> Result<Self, ParseIntError> {
-        if f.starts_with("0x") {
-            // from_hex_str only returns None if it doesn't start with 0x
-            // we can safely unwrap here
-            Self::from_hex_str(f).map_err(|e| e.unwrap())
-        } else {
-            Ok(Hash40::new(f))
-        }
+    fn from_str(f: &str) -> Result<Self, FromLabelError> {
+        Hash40::from_label(&f.to_string())
     }
 }
 
 // Hash40 -> string
 impl Display for Hash40 {
     fn fmt(&self, f: &mut Formatter) -> Result<(), fmtError> {
-        match LABELS.lock() {
-            Ok(label_map) => match &*label_map {
-                LabelMap::Pure(map) => {
-                    if let Some(label) = map.get(&self) {
-                        write!(f, "{}", label)
-                    } else {
-                        write!(f, "0x{:010x}", self.0)
-                    }
-                }
-                LabelMap::Custom(bimap) => {
-                    if let Some(label) = bimap.get_by_left(&self) {
-                        write!(f, "{}", label)
-                    } else {
-                        write!(f, "0x{:010x}", self.0)
-                    }
-                }
-                LabelMap::Unset => write!(f, "0x{:010x}", self.0),
-            },
-            Err(_) => write!(f, "0x{:010x}", self.0),
-        }
+        write!(f, "{}", self.to_label())
     }
 }
 
@@ -90,6 +103,41 @@ impl Deref for Hash40 {
 impl DerefMut for Hash40 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ParseHashError {
+    /// The error returned when the numeric hash string doesn't begin with "0x"
+    MissingPrefix,
+    /// The error returned when the hexadecimal part of the hash string cannot be parsed
+    ParseError(ParseIntError),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum FromLabelError {
+    /// The error returned only when the static label map is bidirectional, and a label
+    /// cannot be matched to a hash
+    LabelNotFound(String),
+    /// The error returned when the hexadecimal part of the hash string cannot be parsed
+    ParseError(ParseIntError),
+}
+
+impl From<ParseIntError> for ParseHashError {
+    fn from(err: ParseIntError) -> Self {
+        Self::ParseError(err)
+    }
+}
+
+impl From<ParseIntError> for FromLabelError {
+    fn from(err: ParseIntError) -> Self {
+        Self::ParseError(err)
+    }
+}
+
+impl Display for FromLabelError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
 
@@ -131,13 +179,13 @@ impl<'de> de::Visitor<'de> for Hash40Visitor {
     }
 
     fn visit_str<E: de::Error>(self, value: &str) -> Result<Self::Value, E> {
-        Hash40::from_str(value).map_err(E::custom)
+        Hash40::from_label(&String::from(value)).map_err(de::Error::custom)
     }
 }
 
 impl Serialize for Hash40 {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(format!("{}", &self).as_ref())
+        serializer.serialize_str(&self.to_label())
     }
 }
 

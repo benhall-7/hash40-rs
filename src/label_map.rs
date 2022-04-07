@@ -14,6 +14,7 @@ pub enum LabelMap {
     Custom(BiHashMap<Hash40, String>),
 }
 
+#[derive(Debug)]
 pub enum CustomLabelError {
     Io(io::Error),
     MisingColumn,

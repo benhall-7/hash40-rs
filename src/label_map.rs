@@ -49,9 +49,9 @@ impl LabelMap {
     pub fn set_custom_labels_from_path<P: AsRef<Path>>(
         &mut self,
         path: P,
-    ) -> Result<Vec<(Hash40, String)>, CustomLabelError> {
+    ) -> Result<(), CustomLabelError> {
         let reader = BufReader::new(File::open(path)?);
-        reader
+        let labels = reader
             .lines()
             .map(|line_result| {
                 let line = line_result?;
@@ -64,7 +64,9 @@ impl LabelMap {
                         Ok((Hash40::from_hex_str(hash)?, String::from(label)))
                     })
             })
-            .collect()
+            .collect::<Result<Vec<_>, _>>()?;
+        self.set_custom_labels(labels.into_iter());
+        Ok(())
     }
 
     pub fn label_of(&self, hash: Hash40) -> Option<String> {

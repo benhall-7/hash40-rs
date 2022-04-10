@@ -16,8 +16,16 @@ impl Hash40 {
     /// Computes a Hash40 from a string. This method does not respect the static label map,
     /// nor does it check to see if the provided string is in hexadecimal format already.
     pub const fn new(string: &str) -> Self {
+        let bytes = string.as_bytes();
+        let algo = Crc::<u32>::new(&CRC_32_CKSUM);
+        let mut digest = algo.digest();
+        let mut index = 0;
+        while index < string.len() {
+            digest = digest.updated(&[bytes[index]]);
+            index += 1;
+        }
+        let crc = digest.finalize() as u64;
         let length_byte = (string.len() as u8 as u64) << 32;
-        let crc = Crc::<u32>::new(&CRC_32_CKSUM).checksum(string.as_bytes()) as u64;
         Hash40(crc | length_byte)
     }
 
@@ -85,7 +93,7 @@ impl FromStr for Hash40 {
     type Err = FromLabelError;
 
     fn from_str(f: &str) -> Result<Self, FromLabelError> {
-        Hash40::from_label(&f.to_string())
+        Hash40::from_label(f)
     }
 }
 

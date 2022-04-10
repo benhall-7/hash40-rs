@@ -10,7 +10,6 @@ edition = "2018"
 [dependencies]
 bimap = "0.6"
 byteorder = "1.3"
-crc = { git = "https://github.com/BenHall-7/crc-rs.git", rev = "7cf646666ca2a81ee7bc2efc0ce1612814d9ccff" }
 diff-struct = "0.3"
 lazy_static = "1.4"
 serde = "1"

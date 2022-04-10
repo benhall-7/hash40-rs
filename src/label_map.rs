@@ -1,4 +1,4 @@
-use crate::r#impl::ParseHashError;
+use crate::errors::ParseHashError;
 use crate::{hash40, Hash40};
 use bimap::BiHashMap;
 
@@ -40,7 +40,7 @@ impl LabelMap {
     }
 
     /// Inserts labels into the map, providing both the hash and the associated label.
-    /// 
+    ///
     /// Users can insert a label for a hash, even if the hash of the label inserted doesn't
     /// match the paired hash. This allows custom descriptive labels when the true label is
     /// not known for the hash.

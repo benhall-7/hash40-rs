@@ -114,6 +114,10 @@ impl Hash40 {
     pub fn label_map() -> Arc<Mutex<LabelMap>> {
         LABELS.clone()
     }
+
+    pub const fn concat(self, other: Hash40) -> Hash40 {
+        Hash40(algorithm::hash40_concat(self.0, other.0))
+    }
 }
 
 impl FromStr for Hash40 {

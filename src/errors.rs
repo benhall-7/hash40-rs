@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 use std::num::ParseIntError;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseHashError {
     /// The error returned when the numeric hash string doesn't begin with "0x"
     MissingPrefix,
@@ -9,7 +9,7 @@ pub enum ParseHashError {
     ParseError(ParseIntError),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FromLabelError {
     /// The error returned only when the static label map is bidirectional, and a label
     /// cannot be matched to a hash

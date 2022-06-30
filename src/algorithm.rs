@@ -33,6 +33,42 @@ const CRC_TABLE: [u32; 256] = [
     0xb3667a2e, 0xc4614ab8, 0x5d681b02, 0x2a6f2b94, 0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d,
 ];
 
+const fn make_odd_matrix() -> [u32; 32] {
+    let mut out = [0u32; 32];
+    out[0] = 0xedb88320;
+
+    let mut n = 1;
+    while n < 32 {
+        out[n] = 1 << (n - 1);
+        n += 1;
+    }
+
+    out
+}
+
+const fn matrix_mul(matrix: &[u32; 32], mut vec: u32) -> u32 {
+    let mut out = 0;
+    let mut idx = 0;
+    while vec > 0 {
+        if vec & 1 == 1 {
+            out ^= matrix[idx];
+        }
+        vec >>= 1;
+        idx += 1;
+    }
+    out
+}
+
+const fn matrix_square(matrix: &[u32; 32]) -> [u32; 32] {
+    let mut out = [0u32; 32];
+    let mut n = 0;
+    while n < 32 {
+        out[n] = matrix_mul(matrix, matrix[n]);
+        n += 1;
+    }
+    out
+}
+
 // until I can use the `crc` crate as well as lowercase the string,
 // I'll manually implement the algorithm here
 pub const fn hash40(string: &str) -> u64 {
@@ -47,10 +83,58 @@ pub const fn hash40(string: &str) -> u64 {
     (!hash) as u64 | (bytes.len() as u8 as u64) << 32
 }
 
+pub const fn hash40_concat(first: u64, second: u64) -> u64 {
+    let crc1 = (first & 0xffffffff) as u32;
+    let crc2 = (second & 0xffffffff) as u32;
+    let len1 = (first >> 32) & 0xFF;
+    let len2 = (second >> 32) & 0xFF;
+
+    if len2 == 0 {
+        return first;
+    }
+
+    let odd = make_odd_matrix();
+
+    let mut even = matrix_square(&odd);
+    let mut odd = matrix_square(&even);
+
+    let mut out = crc1;
+    let mut bits = len2;
+    loop {
+        even = matrix_square(&odd);
+        if bits & 1 == 1 {
+            out = matrix_mul(&even, out);
+        }
+        bits >>= 1;
+
+        if bits == 0 {
+            break;
+        }
+
+        odd = matrix_square(&even);
+        if bits & 1 == 1 {
+            out = matrix_mul(&odd, out);
+        }
+        bits >>= 1;
+
+        if bits == 0 {
+            break;
+        }
+    }
+
+    let crc = out ^ crc2;
+
+    ((len1 + len2) << 32) | crc as u64
+}
+
 #[test]
 fn test_algorithm() {
     assert_eq!(hash40(""), 0);
     assert_eq!(hash40("a"), 0x01e8b7be43);
     assert_eq!(hash40("A"), 0x01e8b7be43);
     assert_eq!(hash40("damage_max"), 0x0aa3cb8810);
+    assert_eq!(
+        hash40_concat(hash40("hello"), hash40("world")),
+        hash40("helloworld")
+    );
 }

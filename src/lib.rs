@@ -115,8 +115,18 @@ impl Hash40 {
         LABELS.clone()
     }
 
+    /// Concatenates two Hash40 values, so that the resulting length and CRC would be the same if
+    /// the original data was all hashed together.
     pub const fn concat(self, other: Hash40) -> Hash40 {
         Hash40(algorithm::hash40_concat(self.0, other.0))
+    }
+
+    /// A convenience method for concatenating two Hash40s separated by a path separator
+    pub const fn join_path(self, other: Hash40) -> Hash40 {
+        Hash40(algorithm::hash40_concat(
+            algorithm::hash40_concat(self.0, algorithm::hash40("/")),
+            other.0,
+        ))
     }
 }
 

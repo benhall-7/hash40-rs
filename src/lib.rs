@@ -117,16 +117,18 @@ impl Hash40 {
 
     /// Concatenates two Hash40 values, so that the resulting length and CRC would be the same if
     /// the original data was all hashed together.
-    pub const fn concat(self, other: Hash40) -> Hash40 {
+    pub const fn concat(self, other: Self) -> Hash40 {
         Hash40(algorithm::hash40_concat(self.0, other.0))
     }
 
+    /// A convenience method for concatenating a string to a Hash40
+    pub const fn concat_str(self, other: &str) -> Self {
+        self.concat(hash40(other))
+    }
+
     /// A convenience method for concatenating two Hash40s separated by a path separator
-    pub const fn join_path(self, other: Hash40) -> Hash40 {
-        Hash40(algorithm::hash40_concat(
-            algorithm::hash40_concat(self.0, algorithm::hash40("/")),
-            other.0,
-        ))
+    pub const fn join_path(self, other: Self) -> Hash40 {
+        self.concat_str("/").concat(other)
     }
 }
 

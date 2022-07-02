@@ -53,7 +53,7 @@ impl Hash40 {
     /// Computes a Hash40 from a string. This method does not respect the static label map,
     /// nor does it check to see if the provided string is in hexadecimal format already.
     pub const fn new(string: &str) -> Self {
-        Hash40(algorithm::hash40(string))
+        Self(algorithm::hash40(string))
     }
 
     /// Converts a hexadecimal string representation of a hash to a Hash40
@@ -117,8 +117,8 @@ impl Hash40 {
 
     /// Concatenates two Hash40 values, so that the resulting length and CRC would be the same if
     /// the original data was all hashed together.
-    pub const fn concat(self, other: Self) -> Hash40 {
-        Hash40(algorithm::hash40_concat(self.0, other.0))
+    pub const fn concat(self, other: Self) -> Self {
+        Self(algorithm::hash40_concat(self.0, other.0))
     }
 
     /// A convenience method for concatenating a string to a Hash40
@@ -127,7 +127,7 @@ impl Hash40 {
     }
 
     /// A convenience method for concatenating two Hash40s separated by a path separator
-    pub const fn join_path(self, other: Self) -> Hash40 {
+    pub const fn join_path(self, other: Self) -> Self {
         self.concat_str("/").concat(other)
     }
 }

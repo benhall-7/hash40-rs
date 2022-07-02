@@ -1,7 +1,5 @@
 use byteorder::{ByteOrder, ReadBytesExt, WriteBytesExt};
-use diff::Diff;
 use lazy_static::lazy_static;
-use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use std::fmt::{Display, Error as fmtError, Formatter};
 use std::io::{self, Read, Write};
@@ -15,6 +13,12 @@ pub mod label_map;
 
 use errors::*;
 use label_map::LabelMap;
+
+#[cfg(feature = "diff")]
+use diff::Diff;
+
+#[cfg(feature = "serde")]
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 lazy_static! {
     /// The static map used for converting Hash40's between hash and string form.
@@ -186,6 +190,7 @@ impl<W: Write> WriteHash40 for W {
     }
 }
 
+#[cfg(feature = "serde")]
 impl<'de> de::Visitor<'de> for Hash40Visitor {
     type Value = Hash40;
 
@@ -203,18 +208,25 @@ impl<'de> de::Visitor<'de> for Hash40Visitor {
     }
 }
 
+#[cfg(feature = "serde")]
 impl Serialize for Hash40 {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         serializer.serialize_str(&self.to_label())
     }
 }
 
+#[cfg(feature = "serde")]
 impl<'de> Deserialize<'de> for Hash40 {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         deserializer.deserialize_str(Hash40Visitor)
     }
 }
 
+#[cfg(feature = "serde")]
+/// Used to implement serde's Deserialize trait
+struct Hash40Visitor;
+
+#[cfg(feature = "diff")]
 impl Diff for Hash40 {
     type Repr = Option<Hash40>;
 
@@ -236,6 +248,3 @@ impl Diff for Hash40 {
         Default::default()
     }
 }
-
-/// Used to implement serde's Deserialize trait
-struct Hash40Visitor;

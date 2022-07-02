@@ -15,7 +15,7 @@ use errors::*;
 use label_map::LabelMap;
 
 #[cfg(feature = "diff")]
-use diff::Diff;
+pub use diff::Diff;
 
 #[cfg(feature = "serde")]
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};

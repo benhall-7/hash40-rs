@@ -1,4 +1,17 @@
+pub mod errors;
+pub mod label_map;
+
+pub use binrw;
+pub use diff;
+
+mod algorithm;
+
+use errors::*;
+use label_map::LabelMap;
+
+use binrw::binrw as binrw_attr;
 use byteorder::{ByteOrder, ReadBytesExt, WriteBytesExt};
+use diff::Diff;
 use lazy_static::lazy_static;
 
 use std::fmt::{Display, Error as fmtError, Formatter};
@@ -6,16 +19,6 @@ use std::io::{self, Read, Write};
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
-
-mod algorithm;
-pub mod errors;
-pub mod label_map;
-
-use errors::*;
-use label_map::LabelMap;
-
-#[cfg(feature = "diff")]
-pub use diff::Diff;
 
 #[cfg(feature = "serde")]
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
@@ -27,6 +30,7 @@ lazy_static! {
 
 /// The central type of the crate, representing a string hashed using the hash40 algorithm
 /// Hash40 is a combination of a crc32 checksum and string length appended to the top bits
+#[binrw_attr]
 #[derive(Debug, Default, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Hash40(pub u64);
 
@@ -190,6 +194,28 @@ impl<W: Write> WriteHash40 for W {
     }
 }
 
+impl Diff for Hash40 {
+    type Repr = Option<Hash40>;
+
+    fn diff(&self, other: &Self) -> Self::Repr {
+        if self == other {
+            None
+        } else {
+            Some(*other)
+        }
+    }
+
+    fn apply(&mut self, diff: &Self::Repr) {
+        if let Some(other) = diff {
+            *self = *other;
+        }
+    }
+
+    fn identity() -> Self {
+        Default::default()
+    }
+}
+
 #[cfg(feature = "serde")]
 impl<'de> de::Visitor<'de> for Hash40Visitor {
     type Value = Hash40;
@@ -225,26 +251,3 @@ impl<'de> Deserialize<'de> for Hash40 {
 #[cfg(feature = "serde")]
 /// Used to implement serde's Deserialize trait
 struct Hash40Visitor;
-
-#[cfg(feature = "diff")]
-impl Diff for Hash40 {
-    type Repr = Option<Hash40>;
-
-    fn diff(&self, other: &Self) -> Self::Repr {
-        if self == other {
-            None
-        } else {
-            Some(*other)
-        }
-    }
-
-    fn apply(&mut self, diff: &Self::Repr) {
-        if let Some(other) = diff {
-            *self = *other;
-        }
-    }
-
-    fn identity() -> Self {
-        Default::default()
-    }
-}

@@ -31,6 +31,7 @@ lazy_static! {
 /// The central type of the crate, representing a string hashed using the hash40 algorithm
 /// Hash40 is a combination of a crc32 checksum and string length appended to the top bits
 #[binrw_attr]
+#[repr(transparent)]
 #[derive(Debug, Default, Copy, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Hash40(pub u64);
 

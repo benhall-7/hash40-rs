@@ -40,14 +40,14 @@ pub const fn hash40(string: &str) -> Hash40 {
     Hash40::new(string)
 }
 
-// An extension of the byteorder trait, to read a Hash40 from a stream
+/// An extension of the byteorder trait, to read a Hash40 from a stream
 pub trait ReadHash40: ReadBytesExt {
     fn read_hash40<T: ByteOrder>(&mut self) -> Result<Hash40, io::Error>;
 
     fn read_hash40_with_meta<T: ByteOrder>(&mut self) -> Result<(Hash40, u32), io::Error>;
 }
 
-// An extension of the byteorder trait, to write a Hash40 into a stream
+/// An extension of the byteorder trait, to write a Hash40 into a stream
 pub trait WriteHash40: WriteBytesExt {
     fn write_hash40<T: ByteOrder>(&mut self, hash: Hash40) -> Result<(), io::Error>;
 
